@@ -52,7 +52,7 @@ With our predictive models in hand, we sought to make this valuable information 
 To maximize the accuracy and applicability of our predictions, we integrated the models for projects with and without roofs. This comprehensive approach yielded a powerful tool for stakeholders to make informed decisions.
 
 **Final Output:**
-- Our integrated model achieved an astounding 100% accuracy in predicting waste volumes within the specified range.
+- Our integrated model achieved a 100% accuracy in predicting waste volumes within the specified range.
 
 ## Conclusion: Empowering Sustainable Construction Practices
 
