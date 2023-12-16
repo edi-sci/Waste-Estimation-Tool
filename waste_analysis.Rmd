@@ -1,0 +1,1915 @@
+---
+title: "WMIF project analysis"
+author: "Heshani Edirisinghe"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Explorotary Data Analysis
+
+We have 3 sets of data. 
+1 - Previous data
+2 - New data from fletchers only a few usable at this point
+3 - Ryan's (Queenstown) data
+
+Ryan's data all though it has roof information it is limited in the design - number of stories and bathrooms and has no board cladding. For the predicting models I have therefore created seperate model using ryans data - the analysis is in wmif project - predicting_model_Oct_Ryan.Rmd file.
+
+Here I will use all data to get an overall picture.
+
+
+First a summary of the waste output
+
+```{r}
+
+library("psych")
+
+data_all <- read.csv("data_final.csv")
+
+#manually convert stories, house type, roof cladding type and bathrooms to factor variables
+
+data_all$h_f <- as.factor(data_all$h_f)
+data_all$stories <- as.factor(data_all$stories)
+data_all$bathrooms <- as.factor(data_all$bathrooms)
+data_all$roof_clad <- as.factor(data_all$roof_clad)
+
+#create a new column dataSet
+
+data_all["dataSet"] = ""
+
+#ryan's data labelled as ryan and prev and fletcher as other
+
+data_all[!is.na(data_all$roof_area), "dataSet"] <- "ryan"
+data_all[is.na(data_all$roof_area), "dataSet"] <- "other"
+
+#summary output of all data at first for the paper
+
+summaryFirstAllData1<-data.frame(unclass(summary(data_all)))
+
+write.csv(summaryFirstAllData1,"summaryFirstAllData1.csv")
+
+#library("psych")
+summaryFirstAllData2<-as.data.frame(describe(data_all))
+write.csv(summaryFirstAllData2,"summaryFirstAllData2.csv")
+
+
+summary(data_all)
+data_all<- subset(data_all,bathrooms!=5, select = job:dataSet)
+data_all<- subset(data_all,bathrooms!=1.5, select = job:dataSet)
+data_all<- subset(data_all,stories!=1.5, select = job:dataSet)
+
+
+#there are missing values in working days for the fletcher new data and roof clad and area for prev data and fletcher
+
+
+```
+
+## Explarotary Plots
+
+To understand what data looks like in detail
+
+```{r}
+#waste volume overall
+
+library(ggplot2)
+
+ggplot(data_all, aes(x=volume)) + 
+  geom_histogram(aes(y=..density..), binwidth = 0.25, colour="black", fill="white")+
+  geom_density(alpha=.2, fill="#FF6666") +
+  labs(title="Waste volume histogram plot",x="Waste volume (tonnes)", y = "Frequency")+
+  theme_classic()
+
+wastevolumeAllHisto <- ggplot(data_all, aes(x=volume)) + 
+  geom_histogram(aes(y=..density..), binwidth = 0.25, colour="black", fill="white")+
+  geom_density(alpha=.4, fill="paleturquoise4") +
+  labs(x="Waste volume (tonnes)", y = "Frequency")+
+  theme_classic()
+ggsave("wastevolumeAllHisto.png", width = 18, height = 18, units = "cm")
+
+  
+
+#Waste volume for different house type
+
+#before that calculate mean of each group
+
+library(plyr)
+mu <- ddply(data_all, "h_f", summarise, grp.mean=mean(volume))
+head(mu)
+
+
+ggplot(data_all, aes(x=volume, color=h_f, fill=h_f)) +
+geom_histogram(aes(y=..density..), binwidth = 0.25, position="identity", alpha=0.5)+
+geom_density(alpha=0.6)+
+geom_vline(data=mu, aes(xintercept=grp.mean, color=h_f),
+           linetype="dashed")+
+scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9"))+
+scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9"))+
+labs(title="Waste volume histogram plot by house type",x="Waste volume (tonnes)", y = "Density")+
+theme_classic()
+
+
+#looks like there is a bimodality in single houses - maybe from ryans data. Will need to label them and plot again
+
+#now create a subdataset with house type = house , coded as zero
+
+houseData <- subset(data_all, h_f=="0", select = job:dataSet)
+
+#checking if the subset is clean
+summary(houseData$h_f)
+
+#redo the histogram by dataset type
+houseData2 <- houseData
+colnames(houseData2)[16] <- "Location"
+houseData2["Location"][houseData2["Location"] == "other"] <- "Auckland"
+houseData2["Location"][houseData2["Location"] == "ryan"] <- "Palmerston North"
+
+#mean line
+muHouse <- ddply(houseData2, "Location", summarise, grp.mean=mean(volume))
+head(muHouse)
+
+ggplot(houseData2, aes(x=volume, color=Location, fill=Location)) +
+geom_histogram(aes(y=..density..), binwidth = 0.25, position="identity", alpha=0.5)+
+geom_density(alpha=0.6)+
+geom_vline(data=muHouse, aes(xintercept=grp.mean, color=Location),
+           linetype="dashed")+
+  #"#999999", "#E69F00", "#56B4E9"
+scale_color_manual(values=c("darksalmon", "dodgerblue4"))+
+scale_fill_manual(values=c("darksalmon", "dodgerblue4"))+
+labs(title="Waste volume histogram plot by location/builder type",x="Waste volume (tonnes)", y = "Density")+
+theme_classic()
+ggsave("houseWasteVolume.png", width = 18, height = 18, units = "cm")
+
+#the difference here can be because of the contractor, most of ryans builders are small scale builders
+
+
+```
+
+## Comparing the waste volume between different groups
+1 - based on house type
+2 - based on dataset type (ryan vs other)
+
+I used t test as both contained 2 groups each.
+
+
+```{r}
+#First house type
+#creating volume vectors for 2 house types
+house <- houseData$volume
+flatData <- subset(data_all, h_f=="1", select = job:dataSet)
+flat <- flatData$volume
+
+#ttest for 2 independent samples, equal variance not assumed
+set.seed(0)
+t.test(house,flat,var.equal = FALSE)
+#As shown in histogram there is no difference in mean volume of waste in the two house types
+
+#now comparing datasets
+ryanData <- subset(data_all, dataSet=="ryan", select = job:dataSet)
+otherData <- subset(data_all, dataSet=="other", select = job:dataSet)
+ryanVol<-ryanData$volume
+otherVol <- otherData$volume
+set.seed(0)
+t.test(ryanVol,otherVol,var.equal = FALSE)
+#Mean waste volume is higher in ryans data compared to other
+
+#since we have outliers it is best to do a non parametric test, Mann Whitney U test - using wilcox.test()
+
+wilcox.test(volume~dataSet, data = data_all)
+median(ryanVol)
+median(otherVol)
+# this too shows that the median of waste volume in ryan's data is greater than median in other waste data 
+#A Mann-Whitney U test showed that there was a significant difference (W= 1570.5, p = 2.56e-11) between the waste volume of the ryans data compared to the other data. The median waste volume in ryan's data was 7.25 tonnes compared to the median waste volume of 5.43 tonnes in other data 
+
+#lets examine the outliers
+
+#ryans data
+ggplot(ryanData, aes(y=volume)) +
+  geom_boxplot()
+#remove points higher than 10? lets see what they have different than others
+
+ryanOutliers <- subset(ryanData, volume>10, select = job:dataSet)
+
+ryanOutliers$h_f <- as.factor(ryanOutliers$h_f)
+ryanOutliers$stories <- as.factor(ryanOutliers$stories)
+ryanOutliers$bathrooms <- as.factor(ryanOutliers$bathrooms)
+ryanOutliers$roof_clad <- as.factor(ryanOutliers$roof_clad)
+
+summary(ryanOutliers)
+
+summary(otherData)
+
+#Decided to keep the outliers in the analysis as could be a part of natural variation. but removed for the prediction model.
+
+#other data - outliers
+
+ggplot(otherData, aes(y=volume)) +
+  geom_boxplot()
+
+otherOutliers <- subset(otherData, volume>10.4, select = job:dataSet)
+
+#Decided to keep the outliers in the analysis as could be a part of natural variation. but removed for the prediction model.
+
+#but redo the t test without outliers
+otherNoOutliers <- subset(otherData, volume<10.4, select = job:dataSet)
+ryanNoOutliers <- subset(ryanData, volume<10, select = job:dataSet)
+
+ryanVol2<-ryanNoOutliers$volume
+otherVol2 <- otherNoOutliers$volume
+set.seed(0)
+t.test(ryanVol2,otherVol2,var.equal = FALSE)
+
+#still the mean waste output differed between datasets, ryans mean being greater than prev and new fletcher data
+
+```
+# Analysis output so far
+
+1. Ryan's data has a higher median waste than other data (previous and new fletcher data)
+*A Mann-Whitney U test showed that there was a significant difference (W= 1570.5, p = 2.56e-11) between the waste volume of the ryans data compared to the other data. The median waste volume in ryan's data was 7.25 tonnes compared to the median waste volume of 5.43 tonnes in other data* 
+2. Keeping the outlers in the analysis as they can be representative of different designs 
+
+## Next step is correlation between variables
+
+```{r}
+
+#getting only the numerical values - working days, floor area, external perimeter, internal wall length, volume,corners, board cladding, sheet cladding, brick or stone, roof area
+
+CorData <- data_all[c("working_days","floor_area","ext_perimeter", "int_wall_length","board_cladding","sheet_cladding","brick_or_stone", "corners", "volume")]
+#class(CorData$working_days)
+
+CorData$working_days <- as.numeric(CorData$working_days)
+CorData <-na.omit(CorData)
+cormat <- round(cor(CorData),3)
+
+library(reshape2)
+melted_cormat <- melt(cormat)
+
+ggplot(data = melted_cormat, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()
+
+
+
+ggheatmap <- ggplot(melted_cormat, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+ scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0, limit = c(-1,1), space = "Lab", 
+    name="Pearson\nCorrelation") +
+  theme_minimal()+ # minimal theme
+ theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+    size = 12, hjust = 1))+
+ coord_fixed()
+# Print the heatmap
+print(ggheatmap)
+
+
+
+
+#reorder the correlation matrix according to the correlation coefficient. This is useful to identify the hidden pattern in the matrix. hclust for hierarchical clustering order is used
+
+reorder_cormat <- function(cormat){
+# Use correlation between variables as distance
+  
+dd <- as.dist((1-cormat)/2)
+hc <- hclust(dd)
+cormat <-cormat[hc$order, hc$order]
+}
+
+get_upper_tri <- function(cormat){
+    cormat[lower.tri(cormat)]<- NA
+    return(cormat)
+  }
+upper_tri <- get_upper_tri(cormat)
+#upper_tri
+
+# Reorder the correlation matrix
+cormat <- reorder_cormat(cormat)
+upper_tri <- get_upper_tri(cormat)
+# Melt the correlation matrix
+melted_cormat <- melt(upper_tri, na.rm = TRUE)
+# Create a ggheatmap
+ggheatmap <- ggplot(melted_cormat, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+ scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0, limit = c(-1,1), space = "Lab", 
+    name="Pearson\nCorrelation") +
+  theme_minimal()+ # minimal theme
+ theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+    size = 12, hjust = 1))+
+ coord_fixed()
+# Print the heatmap
+print(ggheatmap)
+
+
+ggheatmap + 
+geom_text(aes(Var2, Var1, label = value), color = "black", size = 4) +
+theme(
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank(),
+  panel.grid.major = element_blank(),
+  panel.border = element_blank(),
+  panel.background = element_blank(),
+  axis.ticks = element_blank(),
+  legend.justification = c(1, 0),
+  legend.position = c(0.6, 0.7),
+  legend.direction = "horizontal",axis.text.y = element_text(size=12),axis.text.x = element_text(size=12))+
+  guides(fill = guide_colorbar(barwidth = 7, barheight = 1,
+                title.position = "top", title.hjust = 0.5))+
+  scale_x_discrete(labels=c("Board cladding", "No. of working days","No. of corners", "Brick or Stone cladding", "Sheet cladding", "Internal wall length", "Waste volume", "Floor area", "External perimeter"))+
+  scale_y_discrete(labels=c("Board cladding", "No. of working days","No. of corners", "Brick or Stone cladding", "Sheet cladding", "Internal wall length", "Waste volume", "Floor area", "External perimeter"))
+ggsave("heat_map_no_roof.png", width = 18, height = 18, units = "cm")
+
+
+############### creating the cormat for roofarea so that we can connect it to this ###################
+
+
+CorData_roof <- ryanData[c("working_days","floor_area","ext_perimeter", "int_wall_length","roof_area","sheet_cladding","brick_or_stone", "corners", "volume")]
+#class(CorData$working_days)
+
+CorData_roof$working_days <- as.numeric(CorData_roof$working_days)
+CorData_roof['board_cladding']<-0
+CorData_roof <-na.omit(CorData_roof)
+cormat_roof <- round(cor(CorData_roof),3)
+
+cormat_roof
+
+#combining cormats
+combined_cormat1 <- rbind(cormat[,],cormat_roof[5,])
+write.csv(as.data.frame(cormat),"cormat1.csv")
+write.csv(as.data.frame(cormat_roof),"cormat2.csv")
+combined_cormat <- read.csv("finalCormat.csv")
+rownames(combined_cormat) <- combined_cormat[,1]
+combined_cormat<-combined_cormat[-1]
+combined_cormat <- as.matrix(combined_cormat)
+
+#adjusting roof area correlation and board cladding correlation manually. Note here the correlation is set to 0 but, the correlation is actually cannot be measured
+
+#combined_cormat[5,10] <- 0
+#combined_cormat[10,5] <- 0
+#combined_cormat[10,10] <- 1
+
+
+#colnames(combined_cormat)[10]<-"roof_area"
+#rownames(combined_cormat)[10]<-"roof_area"
+
+#redo the heatmap with roof area
+
+melted_cormat_combined <- melt(combined_cormat)
+
+upper_tri <- get_upper_tri(combined_cormat)
+#upper_tri
+
+# Reorder the correlation matrix
+combined_cormat <- reorder_cormat(combined_cormat)
+upper_tri_combined <- get_upper_tri(combined_cormat)
+# Melt the correlation matrix
+melted_cormat_combined <- melt(upper_tri_combined, na.rm = TRUE)
+# Create a ggheatmap
+ggheatmap <- ggplot(melted_cormat_combined, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+ scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0, limit = c(-1,1), space = "Lab", 
+    name="Pearson\nCorrelation") +
+  theme_minimal()+ # minimal theme
+ theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+    size = 12, hjust = 1))+
+ coord_fixed()
+# Print the heatmap
+print(ggheatmap)
+
+
+ggheatmap + 
+geom_text(aes(Var2, Var1, label = value), color = "black", size = 4) +
+theme(
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank(),
+  panel.grid.major = element_blank(),
+  panel.border = element_blank(),
+  panel.background = element_blank(),
+  axis.ticks = element_blank(),
+  legend.justification = c(1, 0),
+  legend.position = c(0.6, 0.7),
+  legend.direction = "horizontal",axis.text.y = element_text(size=12),axis.text.x = element_text(size=12))+
+  guides(fill = guide_colorbar(barwidth = 7, barheight = 1,
+                title.position = "top", title.hjust = 0.5))+
+  scale_x_discrete(labels=c("Board cladding", "No. of working days","No. of corners", "Brick or Stone cladding", "Sheet cladding", "Internal wall length", "Waste volume", "External perimeter", "Floor area", "Roof area"))+
+  scale_y_discrete(labels=c("Board cladding", "No. of working days","No. of corners", "Brick or Stone cladding", "Sheet cladding", "Internal wall length", "Waste volume", "External perimeter", "Floor area", "Roof area"))
+ggsave("heat_map_with_roof.png", width = 18, height = 18, units = "cm")
+
+#replace zero with NA when publising
+
+#we can see that the roof area is highly correlated with floor area so we can continue to use the whole data set of 213 without roof area.
+
+
+```
+
+## PCA for measurement data
+
+Since roof area is highly correlated with floor area to make use of most of data we will drop roof area for PCA analysis.
+
+Since floor area, external perimeter and internal wall length are moderately correlated to each other we will use those of PCA analysis
+
+
+
+```{r}
+
+library(factoextra)
+library(psych)
+pca_data <- data_all[c("job","floor_area","ext_perimeter", "int_wall_length")]
+
+rownames(pca_data)<-pca_data$job
+
+pca_data <- pca_data[c("floor_area","ext_perimeter", "int_wall_length")]
+
+#plotting the correlated variables
+
+pairs.panels(pca_data,
+             gap = 0,
+             bg = c("red", "yellow", "blue")[pca_data$h_f],
+             pch=21)
+
+res.pca <- prcomp(pca_data, center = TRUE, scale = TRUE)
+
+res.pca$scale #used in normalisation
+
+print(res.pca) #we can see that as PC1 increases all 3 variables increase but as pc2 increases only internal wall length will increase, floor area and ext perimeter will decrease
+
+summary(res.pca) # cumulatively first 2 pcs explain 92.7% of the variance.
+
+#fviz_eig(res.pca)
+
+#multicolinearity check
+
+pairs.panels(res.pca$x,
+             gap=0,
+             bg = c("red", "yellow", "blue")[pca_data$h_f],
+             pch=21)
+
+# Eigenvalues
+eig.val <- get_eigenvalue(res.pca)
+eig.val
+
+
+groups_h_f <- as.factor(data_all$h_f[])
+groups_stories <-as.factor(data_all$stories[])
+groups_bathrooms <- as.factor(data_all$bathrooms[])
+groups_dataset <- as.factor(data_all$dataSet[])
+
+
+library(devtools)
+#install_github("vqv/ggbiplot")
+library(ggbiplot)
+g <- ggbiplot(res.pca,
+              obs.scale = 1,
+              var.scale = 1,
+              groups = data_all$h_f,
+              ellipse = TRUE,
+              circle = FALSE,
+              ellipse.prob = 0.68)
+g <- g + scale_color_discrete(name = '')
+g <- g + theme(legend.direction = 'horizontal',
+               legend.position = 'top')
+print(g)
+
+
+#number of stories
+data_all$stories<-as.factor(data_all$stories)
+g <- ggbiplot(res.pca,
+              obs.scale = 1,
+              var.scale = 1,
+              groups = data_all$stories,
+              ellipse = TRUE,
+              circle = FALSE,
+              ellipse.prob = 0.68)
+g <- g + scale_color_discrete(name = '')
+g <- g + theme(legend.direction = 'horizontal',
+               legend.position = 'top')
+print(g)
+
+#number of bathrooms
+data_all$bathrooms<-as.factor(data_all$bathrooms)
+g <- ggbiplot(res.pca,
+              obs.scale = 1,
+              var.scale = 1,
+              groups = data_all$bathrooms,
+              ellipse = TRUE,
+              circle = FALSE,
+              ellipse.prob = 0.68)
+g <- g + scale_color_discrete(name = '')
+g <- g + theme(legend.direction = 'horizontal',
+               legend.position = 'top')
+print(g)
+
+#number of dataset
+data_all$dataSet<-as.factor(data_all$dataSet)
+g <- ggbiplot(res.pca,
+              obs.scale = 1,
+              var.scale = 1,
+              groups = data_all$dataSet,
+              ellipse = TRUE,
+              circle = FALSE,
+              ellipse.prob = 0.68)
+g <- g + scale_color_discrete(name = '')
+g <- g + theme(legend.direction = 'horizontal',
+               legend.position = 'top')
+print(g)
+
+#there is a wide range of overlap between ryan and other data. It has higher PC2 (increased int_wall length and decreased floor area, ext peri compared to other data).
+
+data_all_withPCA <- cbind(data_all,res.pca$x)
+
+write.csv(data_all_withPCA,"dataAllWithPCA.csv")
+
+
+```
+
+## Modeling all data to see if the datasets are different and what the data tell us
+
+```{r}
+allModel<- glm(volume ~ working_days + PC1+ sheet_cladding+ brick_or_stone+ stories + bathrooms + corners +dataSet, data = data_all_withPCA, family = Gamma(link = "identity"))
+
+summary(allModel)
+
+
+```
+```{r}
+
+dataForModAll <- data_all_withPCA[-1]
+dataForModAll <- dataForModAll[-18]
+dataForModAll <- dataForModAll[-13]
+dataForModAll <- dataForModAll[-13]
+
+
+modAll <- glm(volume ~ ., data = dataForModAll,family = Gamma(link = "log"))
+
+modAIC_All <- MASS::stepAIC(modAll, direction = "both" ,k = 2)
+
+tableAllMod <-summary(modAIC_All)$coefficients
+
+write.csv(tableAllMod,"tableAllMod.csv")
+
+summary(modAIC_All)
+
+
+```
+# Outcome explained
+From this model we can see that the best fiting model shows that there is a difference between ryan data and other data. I did not include roof data as that information is not available. But I included board cladding area, interestingly even though ryans data had no boadcladding it was not significant in the model.
+Also, that increase in number of stories by 1 complete level, brick/stone area, sheet cladding area, PC1 (floor area, int wall and ext peri) and the project length (working days) increase the waste volume
+Further, increasing the number of bathrooms to 2/2.5 rather than 1 decreases the waste volume.
+ 
+
+
+## Modeling the data seperately for roof and without roof data
+
+# Without roof data
+
+
+```{r}
+model_data_noRoof <- subset(data_all_withPCA, dataSet=="other", select = job:PC2)
+
+#remove outliers
+#model_data_noRoof <- subset(model_data_noRoof, volume<10, select = job:PC2)
+summary(model_data_noRoof)
+summary(model_data_noRoof$bathrooms)
+
+
+
+
+```
+
+# With roof data
+
+
+```{r}
+model_data_Roof <- subset(data_all_withPCA, dataSet=="ryan", select = job:PC2)
+
+#remove outliers
+#model_data_noRoof <- subset(model_data_noRoof, volume<10, select = job:PC2)
+summary(model_data_Roof)
+#summary(model_data_noRoof$bathrooms)
+
+
+
+
+```
+
+## creating training and testing data for with roof data
+
+```{r}
+#getting only the variables used in models - removed roof data, dataset type and job id
+
+
+
+#creating training and testing data
+
+require(caTools)
+ 
+summary(model_data_Roof)
+
+
+
+set.seed(101)
+sample = sample.split(model_data_Roof$volume, SplitRatio = .75)
+train_roof = subset(model_data_Roof, sample == TRUE)
+test_roof  = subset(model_data_Roof, sample == FALSE)
+
+test_roofTocombine <- test_roof
+
+train_roof1 <- train_roof[c("working_days", "stories","bathrooms", "floor_area","ext_perimeter", "int_wall_length","corners","sheet_cladding", "brick_or_stone", "roof_clad", "roof_area","volume")]
+
+modRoof1 <- glm(volume ~ ., data = train_roof1,family = Gamma(link = "log"))
+
+modRoofAIC1 <- MASS::stepAIC(modRoof1, direction = "both" ,k = 2)
+
+summary(modRoofAIC1)
+
+
+```
+## Roof PCA
+
+```{r}
+
+library(factoextra)
+library(psych)
+train_roof2 <- train_roof[c("job","working_days", "stories","bathrooms", "floor_area","ext_perimeter", "int_wall_length","corners","sheet_cladding", "brick_or_stone", "roof_clad", "roof_area","volume")]
+pca_data_roof <- train_roof2[c("job","floor_area","ext_perimeter", "int_wall_length","roof_area")]
+
+rownames(pca_data_roof)<-pca_data_roof$job
+
+pca_data_roof <- pca_data_roof[c("floor_area","ext_perimeter", "int_wall_length","roof_area")]
+
+#plotting the correlated variables
+
+res.pca_roof <- prcomp(pca_data_roof, center = TRUE, scale = TRUE)
+
+res.pca_roof$scale #used in normalisation
+
+print(res.pca_roof) #we can see that as PC1 increases all 3 variables increase but as pc2 increases only internal wall length will increase, floor area and ext perimeter will decrease
+
+summary(res.pca_roof) # cumulatively first 2 pcs explain 92.7% of the variance.
+
+fviz_eig(res.pca_roof)
+
+
+
+
+# Eigenvalues
+eig.val_roof <- get_eigenvalue(res.pca_roof)
+eig.val_roof
+
+
+groups_h_f <- as.factor(data_all$h_f[])
+groups_stories <-as.factor(data_all$stories[])
+groups_bathrooms <- as.factor(data_all$bathrooms[])
+groups_dataset <- as.factor(data_all$dataSet[])
+
+
+library(devtools)
+#install_github("vqv/ggbiplot")
+library(ggbiplot)
+
+
+#there is a wide range of overlap between ryan and other data. It has higher PC2 (increased int_wall length and decreased floor area, ext peri compared to other data).
+
+res.pca_roof$rotation
+
+write.csv(as.data.frame(res.pca_roof$rotation),"pcaRoofLoadingScores.csv")
+
+roofData_withPCA <- cbind(train_roof2,res.pca_roof$x)
+
+write.csv(roofData_withPCA,"dataAllWithPCA.csv")
+
+```
+# roof model stepAIC
+```{r}
+train_roof_pca <- roofData_withPCA[c("working_days", "stories","bathrooms", "corners","sheet_cladding", "brick_or_stone", "roof_clad", "volume","PC1","PC2")]
+
+modRoof2 <- glm(volume ~ ., data = train_roof_pca,family = Gamma(link = "log"))
+
+modRoofAIC2 <- MASS::stepAIC(modRoof2, direction = "both" ,k = 2)
+
+summary(modRoofAIC2)
+
+test_roof2 <- test_roof[c("floor_area","ext_perimeter", "int_wall_length","roof_area")]
+
+
+
+roof_pc<-as.data.frame(predict(res.pca_roof,test_roof2))
+
+test_roof<- test_roof[,-18]
+test_roof<- test_roof[,-17]
+
+
+test_roof<-cbind(test_roof,roof_pc)
+
+saveRDS(res.pca_roof,"roofPCA.RDS")
+
+#pca.roof <- readRDS("roofPCA.RDS")
+
+#Checkroof_pc<-as.data.frame(predict(pca.roof,test_roof2))
+
+#Checktest_roof<- test_roof[,1:16]
+#Checktest_roof2<-cbind(Checktest_roof,Checkroof_pc)
+
+
+
+
+
+```
+
+# predicting using roof models with train data
+```{r}
+######################### without pca ######################
+
+
+preds_linkRoof1 = predict(modRoofAIC1, newdata = train_roof1,
+                     type = "link",
+                     se.fit = TRUE)# use the glm to make predictions, also provides  std. error
+
+#get critical value
+
+ critval <-qt(0.001, df = df.residual(modRoofAIC1), lower.tail = FALSE) # critical value for approx 99% CI
+ 
+ se <- preds_linkRoof1$se.fit
+ upper_ci_link <- preds_linkRoof1$fit + (critval * preds_linkRoof1$se.fit)# estimate upper CI for prediction on link scale
+ lwr_ci_link <- preds_linkRoof1$fit - (critval * preds_linkRoof1$se.fit)# estimate lower CI for prediction on link scale
+ fit_link <- preds_linkRoof1$fit# returns fited value
+ upper_ci <- modRoofAIC1$family$linkinv(upper_ci_link)
+ lwr_ci <- modRoofAIC1$family$linkinv(lwr_ci_link)
+ fit <- modRoofAIC1$family$linkinv(preds_linkRoof1$fit)
+ act <- train_roof1$volume
+ preds_linkRoof1 = data.frame(fit,lwr_ci,upper_ci,
+                    fit_link,lwr_ci_link,
+                    upper_ci_link,se,act) # puts predictions, CI in a single dataframe
+ colnames(preds_linkRoof1) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume") # give variables logical names
+ 
+ ###check prediction
+# for testing if it works with out 0f range values - preds_link <- read.csv("test_table_loop.csv")
+ 
+ j <- length(preds_linkRoof1$Prediction)
+p=1
+for (i in 1:j) {
+
+   
+  preds_linkRoof1[p,9] <- if(preds_linkRoof1$LCL[p] < preds_linkRoof1$Actual_waste_volume[p] && preds_linkRoof1$UCL[p] > preds_linkRoof1$Actual_waste_volume[p]) print("Yes") else print("No")
+
+  p=p+1
+  
+
+ 
+}
+
+colnames(preds_linkRoof1) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume","within_range")# give variables logical names
+ 
+ 
+ r1 <- as.data.frame(table(preds_linkRoof1$within_range))
+ 
+        Accuracy_Roof_test_modAll<- r1$Freq[r1$Var1=="Yes"]/(sum(r1$Freq))*100
+ 
+ paste("Percentage of predicted range that capture actual waste volume",Accuracy_Roof_test_modAll,"%")
+
+
+
+######################### with pca #########################
+preds_linkRoof2 = predict(modRoofAIC2, newdata = train_roof_pca,
+                     type = "link",
+                     se.fit = TRUE)# use the glm to make predictions, also provides  std. error
+
+#get critical value
+
+ critval <-qt(0.001, df = df.residual(modRoofAIC2), lower.tail = FALSE) # critical value for approx 99% CI
+ 
+ se <- preds_linkRoof2$se.fit
+ upper_ci_link <- preds_linkRoof2$fit + (critval * preds_linkRoof2$se.fit)# estimate upper CI for prediction on link scale
+ lwr_ci_link <- preds_linkRoof2$fit - (critval * preds_linkRoof2$se.fit)# estimate lower CI for prediction on link scale
+ fit_link <- preds_linkRoof2$fit# returns fited value
+ upper_ci <- modRoofAIC2$family$linkinv(upper_ci_link)
+ lwr_ci <- modRoofAIC2$family$linkinv(lwr_ci_link)
+ fit <- modRoofAIC2$family$linkinv(preds_linkRoof2$fit)
+ act <- train_roof_pca$volume
+ preds_linkRoof2 = data.frame(fit,lwr_ci,upper_ci,
+                    fit_link,lwr_ci_link,
+                    upper_ci_link,se,act) # puts predictions, CI in a single dataframe
+ colnames(preds_linkRoof2) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume") # give variables logical names
+ 
+ ###check prediction
+# for testing if it works with out 0f range values - preds_link <- read.csv("test_table_loop.csv")
+ 
+ j <- length(preds_linkRoof2$Prediction)
+p=1
+for (i in 1:j) {
+
+   
+  preds_linkRoof2[p,9] <- if(preds_linkRoof2$LCL[p] < preds_linkRoof2$Actual_waste_volume[p] && preds_linkRoof2$UCL[p] > preds_linkRoof2$Actual_waste_volume[p]) print("Yes") else print("No")
+
+  p=p+1
+  
+
+ 
+}
+
+colnames(preds_linkRoof2) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume","within_range")# give variables logical names
+ 
+ 
+ r2 <- as.data.frame(table(preds_linkRoof2$within_range))
+ 
+        Accuracy_Roof_test_modAll2<- r2$Freq[r2$Var1=="Yes"]/(sum(r2$Freq))*100
+ 
+ paste("Percentage of predicted range that capture actual waste volume",Accuracy_Roof_test_modAll2,"%")
+
+```
+
+
+# predicting using roof models with test data
+```{r}
+######################### without pca ######################
+
+
+preds_linkRoof1_test = predict(modRoofAIC1, newdata = test_roof,
+                     type = "link",
+                     se.fit = TRUE)# use the glm to make predictions, also provides  std. error
+
+#get critical value
+
+ critval <-qt(0.005, df = df.residual(modRoofAIC1), lower.tail = FALSE) # critical value for approx 99% CI
+ 
+ se <- preds_linkRoof1_test$se.fit
+ upper_ci_link <- preds_linkRoof1_test$fit + (critval * preds_linkRoof1_test$se.fit)# estimate upper CI for prediction on link scale
+ lwr_ci_link <- preds_linkRoof1_test$fit - (critval * preds_linkRoof1_test$se.fit)# estimate lower CI for prediction on link scale
+ fit_link <- preds_linkRoof1_test$fit# returns fited value
+ upper_ci <- modRoofAIC1$family$linkinv(upper_ci_link)
+ lwr_ci <- modRoofAIC1$family$linkinv(lwr_ci_link)
+ fit <- modRoofAIC1$family$linkinv(preds_linkRoof1_test$fit)
+ act <- test_roof$volume
+ preds_linkRoof1_test = data.frame(fit,lwr_ci,upper_ci,
+                    fit_link,lwr_ci_link,
+                    upper_ci_link,se,act) # puts predictions, CI in a single dataframe
+ colnames(preds_linkRoof1_test) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume") # give variables logical names
+ 
+ ###check prediction
+# for testing if it works with out 0f range values - preds_link <- read.csv("test_table_loop.csv")
+ 
+ j <- length(preds_linkRoof1_test$Prediction)
+p=1
+for (i in 1:j) {
+
+   
+  preds_linkRoof1_test[p,9] <- if(preds_linkRoof1_test$LCL[p] < preds_linkRoof1_test$Actual_waste_volume[p] && preds_linkRoof1_test$UCL[p] > preds_linkRoof1_test$Actual_waste_volume[p]) print("Yes") else print("No")
+
+  p=p+1
+  
+
+ 
+}
+
+colnames(preds_linkRoof1_test) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume","within_range")# give variables logical names
+ 
+ 
+ r1_test <- as.data.frame(table(preds_linkRoof1_test$within_range))
+ 
+        Accuracy_Roof_test_modAll_test<- r1_test$Freq[r1_test$Var1=="Yes"]/(sum(r1_test$Freq))*100
+ 
+ paste("Percentage of predicted range that capture actual waste volume",Accuracy_Roof_test_modAll_test,"%")
+
+
+
+######################### with pca #########################
+preds_linkRoof2_test = predict(modRoofAIC2, newdata = test_roof,
+                     type = "link",
+                     se.fit = TRUE)# use the glm to make predictions, also provides  std. error
+
+#get critical value
+
+ critval <-qt(0.005, df = df.residual(modRoofAIC2), lower.tail = FALSE) # critical value for approx 99% CI
+ 
+ se <- preds_linkRoof2_test$se.fit
+ upper_ci_link <- preds_linkRoof2_test$fit + (critval * preds_linkRoof2_test$se.fit)# estimate upper CI for prediction on link scale
+ lwr_ci_link <- preds_linkRoof2_test$fit - (critval * preds_linkRoof2_test$se.fit)# estimate lower CI for prediction on link scale
+ fit_link <- preds_linkRoof2_test$fit# returns fited value
+ upper_ci <- modRoofAIC2$family$linkinv(upper_ci_link)
+ lwr_ci <- modRoofAIC2$family$linkinv(lwr_ci_link)
+ fit <- modRoofAIC2$family$linkinv(preds_linkRoof2_test$fit)
+ act <- test_roof$volume
+ preds_linkRoof2_test = data.frame(fit,lwr_ci,upper_ci,
+                    fit_link,lwr_ci_link,
+                    upper_ci_link,se,act) # puts predictions, CI in a single dataframe
+ colnames(preds_linkRoof2_test) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume") # give variables logical names
+ 
+ ###check prediction
+# for testing if it works with out 0f range values - preds_link <- read.csv("test_table_loop.csv")
+ 
+ j <- length(preds_linkRoof2_test$Prediction)
+p=1
+for (i in 1:j) {
+
+   
+  preds_linkRoof2_test[p,9] <- if(preds_linkRoof2_test$LCL[p] < preds_linkRoof2_test$Actual_waste_volume[p] && preds_linkRoof2_test$UCL[p] > preds_linkRoof2_test$Actual_waste_volume[p]) print("Yes") else print("No")
+
+  p=p+1
+  
+
+ 
+}
+
+colnames(preds_linkRoof2_test) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume","within_range")# give variables logical names
+ 
+ 
+ r2_test <- as.data.frame(table(preds_linkRoof2_test$within_range))
+ 
+        Accuracy_Roof_test_modAll2_test<- r2_test$Freq[r2_test$Var1=="Yes"]/(sum(r2_test$Freq))*100
+ 
+ paste("Percentage of predicted range that capture actual waste volume",Accuracy_Roof_test_modAll2_test,"%")
+ 
+ 
+ write.csv(preds_linkRoof2_test,"predOutputpcModel.csv")
+ 
+
+```
+# decision 
+Decided to go without roof pc data
+
+
+#finding best fitting model no roof data
+
+```{r}
+#getting only the variables used in models - removed roof data, dataset type and job id
+
+#model_data_noRoof <- data_all_withPCA[c("working_days","h_f", "stories","bathrooms", "floor_area","ext_perimeter", "int_wall_length","corners","board_cladding", "sheet_cladding", "brick_or_stone", "volume","PC1","PC2")]
+
+model_data_noRoof <- data_all_withPCA
+
+#creating training and testing data
+
+require(caTools)
+ 
+summary(model_data_noRoof)
+#retain bathrooms 1.5,5, stories 1.5
+
+subset1 <- subset(model_data_noRoof, stories==1.5, select = job:PC2)
+
+subset2 <- subset(model_data_noRoof, stories!=1.5, select = job:PC2)
+
+
+set.seed(101)
+sample = sample.split(subset2$volume, SplitRatio = .8)
+train_no_roof = subset(subset2, sample == TRUE)
+test_no_roof  = subset(subset2, sample == FALSE)
+
+#connect subset1 to train data
+
+train_no_roof1 <- rbind(train_no_roof,subset1)
+
+train_no_roof1<- train_no_roof1[!train_no_roof1$job %in% test_roof$job,]
+test_no_roof <- rbind(test_no_roof,test_roofTocombine)
+
+
+train_no_roof <- train_no_roof1[c("working_days","h_f", "stories","bathrooms", "floor_area","ext_perimeter", "int_wall_length","corners","board_cladding", "sheet_cladding", "brick_or_stone", "volume","PC1","PC2","dataSet")]
+
+train_no_roof <- na.omit(train_no_roof)
+
+
+
+
+
+mod <- glm(volume ~ ., data = train_no_roof,family = Gamma(link = "log"))
+
+modAIC <- MASS::stepAIC(mod, direction = "both" ,k = 2)
+
+summary(modAIC)
+
+write.csv(as.data.frame(summary(modAIC)$coefficients),"tableFinalAllDataModel.csv")
+
+```
+
+Final model formula is glm(formula = volume ~ working_days + h_f + floor_area + corners + board_cladding + sheet_cladding + brick_or_stone
+
+It shows strong evidence increasing working days, floor area, sheet cladding and brick/stone cladding increases the waste volume. There is weak evidence that increasing the number of corners and board cladding increases waste volume. 
+
+
+
+# using a model with roof data
+
+## finding best fitting model
+```{r}
+library(lmtest)
+
+glm_roof1 <- glm(volume ~ floor_area + ext_perimeter+ int_wall_length+bathrooms +stories + roof_area + roof_clad, data = train_roof1, family = Gamma(link = "log"))
+
+summary(glm_roof1)
+
+summary(modRoofAIC1)
+
+lrtest(modRoofAIC1,glm_roof1)
+
+glm_roof2 <- glm(volume ~ working_days +floor_area + int_wall_length+ ext_perimeter+ sheet_cladding + bathrooms +brick_or_stone + roof_area + roof_clad, data = train_roof1, family = Gamma(link = "log"))
+
+summary(glm_roof2)
+lrtest(modRoofAIC1,glm_roof2)
+
+
+
+
+
+
+```
+Explanation - We will go ahead with glm _roof1 as it is not significantly different from modroofAIC 
+   
+    
+# Predictability
+
+```{r}
+
+ 
+ #getting predictions for test data
+ preds_link = predict(modAIC, newdata = test_no_roof,
+                     type = "link",
+                     se.fit = TRUE)# use the glm to make predictions, also provides  std. error
+
+#get critical value
+
+ critval <- qt(0.001, df = df.residual(modAIC), lower.tail = FALSE) # critical value for approx 99% CI
+ 
+ se <- preds_link$se.fit
+ upper_ci_link <- preds_link$fit + (critval * preds_link$se.fit)# estimate upper CI for prediction on link scale
+ lwr_ci_link <- preds_link$fit - (critval * preds_link$se.fit)# estimate lower CI for prediction on link scale
+ fit_link <- preds_link$fit# returns fited value
+ upper_ci <- modAIC$family$linkinv(upper_ci_link)
+ lwr_ci <- modAIC$family$linkinv(lwr_ci_link)
+ fit <- modAIC$family$linkinv(preds_link$fit)
+ act <- test_no_roof$volume
+ preds_link = data.frame(fit,lwr_ci,upper_ci,
+                    fit_link,lwr_ci_link,
+                    upper_ci_link,se,act) # puts predictions, CI in a single dataframe
+ colnames(preds_link) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume") # give variables logical names
+ 
+ ###check prediction
+# for testing if it works with out 0f range values - preds_link <- read.csv("test_table_loop.csv")
+ 
+ j <- length(preds_link$Prediction)
+p=1
+for (i in 1:j) {
+
+   
+  preds_link[p,9] <- if(preds_link$LCL[p] < preds_link$Actual_waste_volume[p] && preds_link$UCL[p] > preds_link$Actual_waste_volume[p]) print("Yes") else print("No")
+
+  p=p+1
+  
+
+ 
+}
+
+colnames(preds_link) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume","within_range")# give variables logical names
+ 
+tablePredModAIC <- preds_link
+write.csv(tablePredModAIC,"tablePredModAIC.csv")
+ 
+ a <- as.data.frame(table(preds_link$within_range))
+ 
+        Accuracy_noRoof_test_mod1<- a$Freq[a$Var1=="Yes"]/(sum(a$Freq))*100
+ 
+ paste("Percentage of predicted range that capture actual waste volume",Accuracy_noRoof_test_mod1,"%")
+
+
+
+
+
+
+```
+Best fitting model might not be the best predicting model!!
+
+# Finding the best predicting model
+
+starting with all variables model
+
+```{r}
+ #getting predictions for test data
+
+glm_all <- glm(volume ~ working_days + floor_area + int_wall_length+ ext_perimeter+ board_cladding+ sheet_cladding+ brick_or_stone+ stories + bathrooms + h_f + corners + dataSet, data = train_no_roof, family = Gamma(link = "log"))
+
+summary(glm_all)
+
+library(lmtest)
+lrtest(modAIC,glm_all)
+
+RyanTest <- subset(data_all_withPCA, dataSet=="ryan", select = working_days:PC2)
+
+
+
+ preds_link2 = predict(glm_all, newdata = test_no_roof,
+                     type = "link",
+                     se.fit = TRUE)# use the glm to make predictions, also provides  std. error
+
+#get critical value
+
+ critval <- qt(0.001, df = df.residual(glm_all), lower.tail = FALSE) # critical value for approx 99% CI
+ 
+ se <- preds_link2$se.fit
+ upper_ci_link <- preds_link2$fit + (critval * preds_link2$se.fit)# estimate upper CI for prediction on link scale
+ lwr_ci_link <- preds_link2$fit - (critval * preds_link2$se.fit)# estimate lower CI for prediction on link scale
+ fit_link <- preds_link2$fit# returns fited value
+ upper_ci <- glm_all$family$linkinv(upper_ci_link)
+ lwr_ci <- glm_all$family$linkinv(lwr_ci_link)
+ fit <- glm_all$family$linkinv(preds_link2$fit)
+ act <- test_no_roof$volume
+ preds_link2 = data.frame(fit,lwr_ci,upper_ci,
+                    fit_link,lwr_ci_link,
+                    upper_ci_link,se,act) # puts predictions, CI in a single dataframe
+ colnames(preds_link2) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume") # give variables logical names
+ 
+ ###check prediction
+# for testing if it works with out 0f range values - preds_link <- read.csv("test_table_loop.csv")
+ 
+ j <- length(preds_link2$Prediction)
+p=1
+for (i in 1:j) {
+
+   
+  preds_link2[p,9] <- if(preds_link2$LCL[p] < preds_link2$Actual_waste_volume[p] && preds_link2$UCL[p] > preds_link2$Actual_waste_volume[p]) print("Yes") else print("No")
+
+  p=p+1
+  
+
+ 
+}
+
+colnames(preds_link2) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume","within_range")# give variables logical names
+ 
+ 
+ b <- as.data.frame(table(preds_link2$within_range))
+ 
+        Accuracy_noRoof_test_mod2<- b$Freq[b$Var1=="Yes"]/(sum(b$Freq))*100
+ 
+ paste("Percentage of predicted range that capture actual waste volume",Accuracy_noRoof_test_mod2,"%")
+
+write.csv(preds_link2,"glm_all_predictions_table.csv")
+
+```
+
+
+```{r}
+ #getting predictions for test data
+
+glm2 <- glm(volume ~ working_days + floor_area + bathrooms + corners + dataSet , data = train_no_roof, family = Gamma(link = "log"))
+
+summary(glm2)
+
+
+ preds_link3 = predict(glm2, newdata = test_no_roof,
+                     type = "link",
+                     se.fit = TRUE)# use the glm to make predictions, also provides  std. error
+
+#get critical value
+
+ critval <- qt(0.001, df = df.residual(glm2), lower.tail = FALSE) # critical value for approx 99% CI
+ 
+ se <- preds_link3$se.fit
+ upper_ci_link <- preds_link3$fit + (critval * preds_link3$se.fit)# estimate upper CI for prediction on link scale
+ lwr_ci_link <- preds_link3$fit - (critval * preds_link3$se.fit)# estimate lower CI for prediction on link scale
+ fit_link <- preds_link3$fit# returns fited value
+ upper_ci <- glm2$family$linkinv(upper_ci_link)
+ lwr_ci <- glm2$family$linkinv(lwr_ci_link)
+ fit <- glm2$family$linkinv(preds_link3$fit)
+ act <- test_no_roof$volume
+ preds_link3 = data.frame(fit,lwr_ci,upper_ci,
+                    fit_link,lwr_ci_link,
+                    upper_ci_link,se,act) # puts predictions, CI in a single dataframe
+ colnames(preds_link3) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume") # give variables logical names
+ 
+ ###check prediction
+# for testing if it works with out 0f range values - preds_link <- read.csv("test_table_loop.csv")
+ 
+ j <- length(preds_link3$Prediction)
+p=1
+for (i in 1:j) {
+
+   
+  preds_link3[p,9] <- if(preds_link3$LCL[p] < preds_link3$Actual_waste_volume[p] && preds_link3$UCL[p] > preds_link3$Actual_waste_volume[p]) print("Yes") else print("No")
+
+  p=p+1
+  
+
+ 
+}
+
+colnames(preds_link3) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume","within_range")# give variables logical names
+ 
+ 
+ c <- as.data.frame(table(preds_link3$within_range))
+ 
+        Accuracy_noRoof_test_mod3<- c$Freq[c$Var1=="Yes"]/(sum(c$Freq))*100
+ 
+ paste("Percentage of predicted range that capture actual waste volume",Accuracy_noRoof_test_mod3,"%")
+
+
+
+```
+# Currently highest prediction is glm3
+```{r}
+
+ #getting predictions for test data
+
+glm3 <- glm(volume ~ working_days + floor_area + bathrooms + corners + dataSet +stories , data = train_no_roof, family = Gamma(link = "log"))
+
+summary(glm3)
+
+ preds_link4 = predict(glm3, newdata = test_no_roof,
+                     type = "link",
+                     se.fit = TRUE)# use the glm to make predictions, also provides  std. error
+
+#get critical value
+
+ critval <- qt(0.001, df = df.residual(glm3), lower.tail = FALSE) # critical value for approx 99% CI
+ 
+ se <- preds_link4$se.fit
+ upper_ci_link <- preds_link4$fit + (critval * preds_link4$se.fit)# estimate upper CI for prediction on link scale
+ lwr_ci_link <- preds_link4$fit - (critval * preds_link4$se.fit)# estimate lower CI for prediction on link scale
+ fit_link <- preds_link4$fit# returns fited value
+ upper_ci <- glm3$family$linkinv(upper_ci_link)
+ lwr_ci <- glm3$family$linkinv(lwr_ci_link)
+ fit <- glm3$family$linkinv(preds_link4$fit)
+ act <- test_no_roof$volume
+ preds_link4 = data.frame(fit,lwr_ci,upper_ci,
+                    fit_link,lwr_ci_link,
+                    upper_ci_link,se,act) # puts predictions, CI in a single dataframe
+ colnames(preds_link4) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume") # give variables logical names
+ 
+ ###check prediction
+# for testing if it works with out 0f range values - preds_link <- read.csv("test_table_loop.csv")
+ 
+ j <- length(preds_link4$Prediction)
+p=1
+for (i in 1:j) {
+
+   
+  preds_link4[p,9] <- if(preds_link4$LCL[p] < preds_link4$Actual_waste_volume[p] && preds_link4$UCL[p] > preds_link4$Actual_waste_volume[p]) print("Yes") else print("No")
+
+  p=p+1
+  
+
+ 
+}
+
+colnames(preds_link4) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume","within_range")# give variables logical names
+ 
+ 
+ d <- as.data.frame(table(preds_link4$within_range))
+ 
+        Accuracy_noRoof_test_mod4<- d$Freq[d$Var1=="Yes"]/(sum(d$Freq))*100
+ 
+ paste("Percentage of predicted range that capture actual waste volume",Accuracy_noRoof_test_mod4,"%")
+
+```
+
+
+
+
+```{r}
+
+glm4 <- glm(volume ~ working_days + floor_area + bathrooms + corners + dataSet+h_f , data = train_no_roof, family = Gamma(link = "log"))
+#?family
+
+summary(glm4)
+
+ preds_link5 = predict(glm4, newdata = test_no_roof,
+                     type = "link",
+                     se.fit = TRUE)# use the glm to make predictions, also provides  std. error
+
+#get critical value
+
+ critval <- qt(0.001, df = df.residual(glm4), lower.tail = FALSE) # critical value for approx 99% CI
+ 
+ se <- preds_link5$se.fit
+ upper_ci_link <- preds_link5$fit + (critval * preds_link5$se.fit)# estimate upper CI for prediction on link scale
+ lwr_ci_link <- preds_link5$fit - (critval * preds_link5$se.fit)# estimate lower CI for prediction on link scale
+ fit_link <- preds_link5$fit# returns fited value
+ upper_ci <- glm4$family$linkinv(upper_ci_link)
+ lwr_ci <- glm4$family$linkinv(lwr_ci_link)
+ fit <- glm4$family$linkinv(preds_link5$fit)
+ act <- test_no_roof$volume
+ preds_link5 = data.frame(fit,lwr_ci,upper_ci,
+                    fit_link,lwr_ci_link,
+                    upper_ci_link,se,act) # puts predictions, CI in a single dataframe
+ colnames(preds_link5) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume") # give variables logical names
+ 
+ ###check prediction
+# for testing if it works with out 0f range values - preds_link <- read.csv("test_table_loop.csv")
+ 
+ j <- length(preds_link5$Prediction)
+p=1
+for (i in 1:j) {
+
+   
+  preds_link5[p,9] <- if(preds_link5$LCL[p] < preds_link5$Actual_waste_volume[p] && preds_link5$UCL[p] > preds_link5$Actual_waste_volume[p]) print("Yes") else print("No")
+
+  p=p+1
+  
+
+ 
+}
+
+colnames(preds_link5) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume","within_range")# give variables logical names
+ 
+ 
+ d <- as.data.frame(table(preds_link5$within_range))
+ 
+        Accuracy_noRoof_test_mod4<- d$Freq[d$Var1=="Yes"]/(sum(d$Freq))*100
+ 
+ paste("Percentage of predicted range that capture actual waste volume",Accuracy_noRoof_test_mod4,"%")
+
+
+
+```
+
+```{r}
+
+glm8 <- glm(volume ~ working_days + floor_area + bathrooms + corners + dataSet + sheet_cladding, data = train_no_roof, family = Gamma(link = "log"))
+#?family
+
+summary(glm8)
+
+ preds_link8 = predict(glm8, newdata = test_no_roof,
+                     type = "link",
+                     se.fit = TRUE)# use the glm to make predictions, also provides  std. error
+
+#get critical value
+
+ critval <- qt(0.001, df = df.residual(glm8), lower.tail = FALSE) # critical value for approx 99% CI
+ 
+ se <- preds_link8$se.fit
+ upper_ci_link <- preds_link8$fit + (critval * preds_link8$se.fit)# estimate upper CI for prediction on link scale
+ lwr_ci_link <- preds_link8$fit - (critval * preds_link8$se.fit)# estimate lower CI for prediction on link scale
+ fit_link <- preds_link8$fit# returns fited value
+ upper_ci <- glm8$family$linkinv(upper_ci_link)
+ lwr_ci <- glm8$family$linkinv(lwr_ci_link)
+ fit <- glm8$family$linkinv(preds_link8$fit)
+ act <- test_no_roof$volume
+ preds_link8 = data.frame(fit,lwr_ci,upper_ci,
+                    fit_link,lwr_ci_link,
+                    upper_ci_link,se,act) # puts predictions, CI in a single dataframe
+ colnames(preds_link8) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume") # give variables logical names
+ 
+ ###check prediction
+# for testing if it works with out 0f range values - preds_link <- read.csv("test_table_loop.csv")
+ 
+ j <- length(preds_link8$Prediction)
+p=1
+for (i in 1:j) {
+
+   
+  preds_link8[p,9] <- if(preds_link8$LCL[p] < preds_link8$Actual_waste_volume[p] && preds_link8$UCL[p] > preds_link8$Actual_waste_volume[p]) print("Yes") else print("No")
+
+  p=p+1
+  
+
+ 
+}
+
+colnames(preds_link8) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume","within_range")# give variables logical names
+ 
+ 
+ h <- as.data.frame(table(preds_link8$within_range))
+ 
+        Accuracy_noRoof_test_mod8<- h$Freq[h$Var1=="Yes"]/(sum(h$Freq))*100
+ 
+ paste("Percentage of predicted range that capture actual waste volume",Accuracy_noRoof_test_mod8,"%")
+
+
+
+
+```
+
+
+```{r}
+
+glm9 <- glm(volume ~ working_days + floor_area + bathrooms + corners + dataSet + sheet_cladding + board_cladding, data = train_no_roof, family = Gamma(link = "log"))
+#?family
+
+summary(glm9)
+
+ preds_link9 = predict(glm9, newdata = test_no_roof,
+                     type = "link",
+                     se.fit = TRUE)# use the glm to make predictions, also provides  std. error
+
+#get critical value
+
+ critval <- qt(0.001, df = df.residual(glm9), lower.tail = FALSE) # critical value for approx 99% CI
+ 
+ se <- preds_link9$se.fit
+ upper_ci_link <- preds_link9$fit + (critval * preds_link9$se.fit)# estimate upper CI for prediction on link scale
+ lwr_ci_link <- preds_link9$fit - (critval * preds_link9$se.fit)# estimate lower CI for prediction on link scale
+ fit_link <- preds_link9$fit# returns fited value
+ upper_ci <- glm9$family$linkinv(upper_ci_link)
+ lwr_ci <- glm9$family$linkinv(lwr_ci_link)
+ fit <- glm9$family$linkinv(preds_link9$fit)
+ act <- test_no_roof$volume
+ preds_link9 = data.frame(fit,lwr_ci,upper_ci,
+                    fit_link,lwr_ci_link,
+                    upper_ci_link,se,act) # puts predictions, CI in a single dataframe
+ colnames(preds_link9) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume") # give variables logical names
+ 
+ ###check prediction
+# for testing if it works with out 0f range values - preds_link <- read.csv("test_table_loop.csv")
+ 
+ j <- length(preds_link9$Prediction)
+p=1
+for (i in 1:j) {
+
+   
+  preds_link9[p,9] <- if(preds_link9$LCL[p] < preds_link9$Actual_waste_volume[p] && preds_link9$UCL[p] > preds_link9$Actual_waste_volume[p]) print("Yes") else print("No")
+
+  p=p+1
+  
+
+ 
+}
+
+colnames(preds_link9) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume","within_range")# give variables logical names
+ 
+ 
+ k <- as.data.frame(table(preds_link9$within_range))
+ 
+        Accuracy_noRoof_test_mod9<- k$Freq[k$Var1=="Yes"]/(sum(k$Freq))*100
+ 
+ paste("Percentage of predicted range that capture actual waste volume",Accuracy_noRoof_test_mod9,"%")
+
+
+
+
+```
+
+```{r}
+
+glm10 <- glm(volume ~ working_days + floor_area + bathrooms + corners + dataSet+ sheet_cladding + board_cladding, data = train_no_roof, family = Gamma(link = "log"))
+#?family
+
+summary(glm10)
+
+ preds_link10 = predict(glm10, newdata = test_no_roof,
+                     type = "link",
+                     se.fit = TRUE)# use the glm to make predictions, also provides  std. error
+
+#get critical value
+
+ critval <- qt(0.001, df = df.residual(glm10), lower.tail = FALSE) # critical value for approx 99% CI
+ 
+ se <- preds_link10$se.fit
+ upper_ci_link <- preds_link10$fit + (critval * preds_link10$se.fit)# estimate upper CI for prediction on link scale
+ lwr_ci_link <- preds_link10$fit - (critval * preds_link10$se.fit)# estimate lower CI for prediction on link scale
+ fit_link <- preds_link10$fit# returns fited value
+ upper_ci <- glm10$family$linkinv(upper_ci_link)
+ lwr_ci <- glm10$family$linkinv(lwr_ci_link)
+ fit <- glm10$family$linkinv(preds_link10$fit)
+ act <- test_no_roof$volume
+ preds_link10 = data.frame(fit,lwr_ci,upper_ci,
+                    fit_link,lwr_ci_link,
+                    upper_ci_link,se,act) # puts predictions, CI in a single dataframe
+ colnames(preds_link10) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume") # give variables logical names
+ 
+ ###check prediction
+# for testing if it works with out 0f range values - preds_link <- read.csv("test_table_loop.csv")
+ 
+ j <- length(preds_link10$Prediction)
+p=1
+for (i in 1:j) {
+
+   
+  preds_link10[p,9] <- if(preds_link10$LCL[p] < preds_link10$Actual_waste_volume[p] && preds_link10$UCL[p] > preds_link10$Actual_waste_volume[p]) print("Yes") else print("No")
+
+  p=p+1
+  
+
+ 
+}
+
+colnames(preds_link10) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume","within_range")# give variables logical names
+ 
+ 
+ l <- as.data.frame(table(preds_link10$within_range))
+ 
+        Accuracy_noRoof_test_mod10<- l$Freq[l$Var1=="Yes"]/(sum(l$Freq))*100
+ 
+ paste("Percentage of predicted range that capture actual waste volume",Accuracy_noRoof_test_mod10,"%")
+
+
+
+
+
+
+```
+
+
+```{r}
+glm_roof3 <- glm(volume ~ working_days+ PC1 + PC2 + roof_clad +sheet_cladding + bathrooms +stories, data = train_roof_pca, family = Gamma(link = "log"))
+
+summary(glm_roof3)
+
+lrtest(modRoofAIC2,glm_roof3
+       )
+
+write.csv(as.data.frame(summary(modRoofAIC2)$coefficients),"roofModWithPC.csv")
+
+write.csv(as.data.frame(summary(glm_roof3)$coefficients),"roofModWithPC_prediction.csv")
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+## glm_roof2 is the selected predicting model with roof data
+
+
+```{r}
+
+######################with training data ###########################################
+ preds_link6 = predict(glm_roof3 , newdata = train_roof_pca,
+                     type = "link",
+                     se.fit = TRUE)# use the glm to make predictions, also provides  std. error
+
+#get critical value
+
+ critval <-qt(0.001, df = df.residual(glm_roof3), lower.tail = FALSE) # critical value for approx 99% CI
+ 
+ se <- preds_link6$se.fit
+ upper_ci_link <- preds_link6$fit + (critval * preds_link6$se.fit)# estimate upper CI for prediction on link scale
+ lwr_ci_link <- preds_link6$fit - (critval * preds_link6$se.fit)# estimate lower CI for prediction on link scale
+ fit_link <- preds_link6$fit# returns fited value
+ upper_ci <- glm_roof3$family$linkinv(upper_ci_link)
+ lwr_ci <- glm_roof3$family$linkinv(lwr_ci_link)
+ fit <- glm_roof3$family$linkinv(preds_link6$fit)
+ act <- train_roof_pca$volume
+ preds_link6 = data.frame(fit,lwr_ci,upper_ci,
+                    fit_link,lwr_ci_link,
+                    upper_ci_link,se,act) # puts predictions, CI in a single dataframe
+ colnames(preds_link6) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume") # give variables logical names
+ 
+ ###check prediction
+# for testing if it works with out 0f range values - preds_link <- read.csv("test_table_loop.csv")
+ 
+ j <- length(preds_link6$Prediction)
+p=1
+for (i in 1:j) {
+
+   
+  preds_link6[p,9] <- if(preds_link6$LCL[p] < preds_link6$Actual_waste_volume[p] && preds_link6$UCL[p] > preds_link6$Actual_waste_volume[p]) print("Yes") else print("No")
+
+  p=p+1
+  
+
+ 
+}
+
+colnames(preds_link6) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume","within_range")# give variables logical names
+ 
+ 
+ e <- as.data.frame(table(preds_link6$within_range))
+ 
+        Accuracy_noRoof_test_mod5<- e$Freq[e$Var1=="Yes"]/(sum(e$Freq))*100
+ 
+ paste("Percentage of predicted range that capture actual waste volume",Accuracy_noRoof_test_mod5,"%")
+
+ ##################################with test data ####################################################################
+ 
+  preds_link6_test = predict(glm_roof3, newdata = test_roof,
+                     type = "link",
+                     se.fit = TRUE)# use the glm to make predictions, also provides  std. error
+
+#get critical value
+
+ critval <-qt(0.001, df = df.residual(glm_roof3), lower.tail = FALSE) # critical value for approx 99% CI
+ 
+ se <- preds_link6_test$se.fit
+ upper_ci_link <- preds_link6_test$fit + (critval * preds_link6_test$se.fit)# estimate upper CI for prediction on link scale
+ lwr_ci_link <- preds_link6_test$fit - (critval * preds_link6_test$se.fit)# estimate lower CI for prediction on link scale
+ fit_link <- preds_link6_test$fit# returns fited value
+ upper_ci <- glm_roof3$family$linkinv(upper_ci_link)
+ lwr_ci <- glm_roof3$family$linkinv(lwr_ci_link)
+ fit <- glm_roof3$family$linkinv(preds_link6_test$fit)
+ act <- test_roof$volume
+ preds_link6_test = data.frame(fit,lwr_ci,upper_ci,
+                    fit_link,lwr_ci_link,
+                    upper_ci_link,se,act) # puts predictions, CI in a single dataframe
+ colnames(preds_link6_test) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume") # give variables logical names
+ 
+ ###check prediction
+# for testing if it works with out 0f range values - preds_link <- read.csv("test_table_loop.csv")
+ 
+ j <- length(preds_link6_test$Prediction)
+p=1
+for (i in 1:j) {
+
+   
+  preds_link6_test[p,9] <- if(preds_link6_test$LCL[p] < preds_link6_test$Actual_waste_volume[p] && preds_link6_test$UCL[p] > preds_link6_test$Actual_waste_volume[p]) print("Yes") else print("No")
+
+  p=p+1
+  
+
+ 
+}
+
+colnames(preds_link6_test) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume","within_range")# give variables logical names
+ 
+ 
+ e_test <- as.data.frame(table(preds_link6_test$within_range))
+ 
+        Accuracy_noRoof_test_mod5_test<- e_test$Freq[e_test$Var1=="Yes"]/(sum(e_test$Freq))*100
+ 
+ paste("Percentage of predicted range that capture actual waste volume",Accuracy_noRoof_test_mod5_test,"%")
+ 
+ write.csv(preds_link6_test,"predOutputRoofFinalModel.csv")
+
+
+
+```
+
+
+
+```{r}
+
+
+
+ preds_link7 = predict(glm_roof1, newdata = test_roof,
+                     type = "link",
+                     se.fit = TRUE)# use the glm to make predictions, also provides  std. error
+
+#get critical value
+
+ critval <- qt(0.005, df = df.residual(glm_roof1), lower.tail = FALSE) # critical value for approx 99% CI
+ 
+ se <- preds_link7$se.fit
+ upper_ci_link <- preds_link7$fit + (critval * preds_link7$se.fit)# estimate upper CI for prediction on link scale
+ lwr_ci_link <- preds_link7$fit - (critval * preds_link7$se.fit)# estimate lower CI for prediction on link scale
+ fit_link <- preds_link7$fit# returns fited value
+ upper_ci <- glm3$family$linkinv(upper_ci_link)
+ lwr_ci <- glm3$family$linkinv(lwr_ci_link)
+ fit <- glm3$family$linkinv(preds_link7$fit)
+ act <- test_roof$volume
+ preds_link7 = data.frame(fit,lwr_ci,upper_ci,
+                    fit_link,lwr_ci_link,
+                    upper_ci_link,se,act) # puts predictions, CI in a single dataframe
+ colnames(preds_link7) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume") # give variables logical names
+ 
+ ###check prediction
+# for testing if it works with out 0f range values - preds_link <- read.csv("test_table_loop.csv")
+ 
+ j <- length(preds_link7$Prediction)
+p=1
+for (i in 1:j) {
+
+   
+  preds_link7[p,9] <- if(preds_link7$LCL[p] < preds_link7$Actual_waste_volume[p] && preds_link7$UCL[p] > preds_link7$Actual_waste_volume[p]) print("Yes") else print("No")
+
+  p=p+1
+  
+
+ 
+}
+
+colnames(preds_link7) = c("Prediction","LCL", "UCL",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume","within_range")# give variables logical names
+ 
+ 
+ f <- as.data.frame(table(preds_link7$within_range))
+ 
+        Accuracy_noRoof_test_mod6<- f$Freq[f$Var1=="Yes"]/(sum(f$Freq))*100
+ 
+ paste("Percentage of predicted range that capture actual waste volume",Accuracy_noRoof_test_mod6,"%")
+
+
+
+
+
+```
+
+
+```{r}
+
+
+
+```
+
+
+## Getting final Preidction using glm_all and glm_roof2 models for the app
+
+```{r}
+
+saveRDS(glm_all,"allNoRoofModel.RDS")
+saveRDS(glm_roof3,"roofModel.RDS")
+
+tableNoRoof <-summary(glm_all)$coefficients
+
+write.csv(tableNoRoof,"tableNoRoof.csv")
+
+tableRoof <-summary(glm_roof1)$coefficients
+
+write.csv(tableRoof,"tableRoof.csv")
+
+
+
+###############getting predictions using roof model for ryans all data################
+ preds_linkFinalRoof = predict(glm_roof3, newdata = test_roof,
+                     type = "link",
+                     se.fit = TRUE)# use the glm to make predictions, also provides  std. error
+
+#get critical value
+
+ critval <- qt(0.005, df = df.residual(glm_roof3), lower.tail = FALSE) # critical value for approx 99% CI
+ 
+ se <- preds_linkFinalRoof$se.fit
+ upper_ci_link <- preds_linkFinalRoof$fit + (critval * preds_linkFinalRoof$se.fit)# estimate upper CI for prediction on link scale
+ lwr_ci_link <- preds_linkFinalRoof$fit - (critval * preds_linkFinalRoof$se.fit)# estimate lower CI for prediction on link scale
+ fit_link <- preds_linkFinalRoof$fit# returns fited value
+ upper_ci <- glm_roof3$family$linkinv(upper_ci_link)
+ lwr_ci <- glm_roof3$family$linkinv(lwr_ci_link)
+ fit <- glm_roof3$family$linkinv(preds_linkFinalRoof$fit)
+ act <- test_roof$volume
+ preds_linkFinalRoof = data.frame(fit,lwr_ci,upper_ci,
+                    fit_link,lwr_ci_link,
+                    upper_ci_link,se,act) # puts predictions, CI in a single dataframe
+ colnames(preds_linkFinalRoof) = c("Prediction_R","LCL_R", "UCL_R",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume") # give variables logical names
+ 
+ 
+ 
+ ################### getting predictions using no roof model to ryans data ####################
+ 
+ test_roof['board_cladding']<-0
+ test_roof['h_f']<-"0"
+ 
+ #glm_all <- glm2
+ preds_linkFinalother = predict(glm_all, newdata = test_roof,
+                     type = "link",
+                     se.fit = TRUE)# use the glm to make predictions, also provides  std. error
+
+#get critical value
+
+ critval <- qt(0.005, df = df.residual(glm_all), lower.tail = FALSE) # critical value for approx 99% CI
+ 
+ se <- preds_linkFinalother$se.fit
+ upper_ci_link <- preds_linkFinalother$fit + (critval * preds_linkFinalother$se.fit)# estimate upper CI for prediction on link scale
+ lwr_ci_link <- preds_linkFinalother$fit - (critval * preds_linkFinalother$se.fit)# estimate lower CI for prediction on link scale
+ fit_link <- preds_linkFinalother$fit# returns fited value
+ upper_ci <- glm_all$family$linkinv(upper_ci_link)
+ lwr_ci <- glm_all$family$linkinv(lwr_ci_link)
+ fit <- glm_all$family$linkinv(preds_linkFinalother$fit)
+ #act <- test_roof$volume
+ preds_linkFinalother = data.frame(fit,lwr_ci,upper_ci,
+                    fit_link,lwr_ci_link,
+                    upper_ci_link,se) # puts predictions, CI in a single dataframe
+ colnames(preds_linkFinalother) = c("Prediction_O","LCL_O", "UCL_O",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE") # give variables logical names
+ 
+ 
+##################combine two prediction tables##################
+ 
+ finalPredTable <- cbind(preds_linkFinalother,preds_linkFinalRoof)
+ ###check prediction
+# for testing if it works with out 0f range values - preds_link <- read.csv("test_table_loop.csv")
+ 
+ #getting the average of prediction
+ 
+  j <- length(finalPredTable$Prediction_O)
+p=1
+for (i in 1:j) {
+
+   
+  finalPredTable[p,16] <- (finalPredTable$Prediction_O[p]+finalPredTable$Prediction_R[p])/2
+  finalPredTable[p,17] <- (finalPredTable$LCL_O[p]+finalPredTable$LCL_R[p])/2
+  finalPredTable[p,18] <- (finalPredTable$UCL_O[p]+finalPredTable$UCL_R[p])/2
+  
+  p=p+1
+  
+}
+
+colnames(finalPredTable) = c("Prediction_O","LCL_O", "UCL_O",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Prediction_R","LCL_R", "UCL_R",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume","PredictionAvg","LCL","UCL")# give variables logical names
+ 
+
+
+#check if within the range
+ 
+ 
+ 
+ j <- length(finalPredTable$Prediction_O)
+p=1
+for (i in 1:j) {
+
+   
+  finalPredTable[p,19] <- if(finalPredTable$LCL[p] < finalPredTable$Actual_waste_volume[p] && finalPredTable$UCL[p] > finalPredTable$Actual_waste_volume[p]) print("Yes") else print("No")
+
+  p=p+1
+  
+
+ 
+}
+
+colnames(finalPredTable) = c("Prediction_O","LCL_O", "UCL_O",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Prediction_R","LCL_R", "UCL_R",
+                     "Link_Prediction","Link_LCL", "Link_UCL","SE","Actual_waste_volume","PredictionAvg","LCL","UCL","within_range")# give variables logical names
+ 
+ 
+finalPredTablePrint <- finalPredTable[c("Prediction_O","LCL_O", "UCL_O",
+                     "Prediction_R","LCL_R", "UCL_R",
+                     "Actual_waste_volume","PredictionAvg","LCL","UCL","within_range")]
+
+finalPredTablePrint
+
+ abc <- as.data.frame(table(finalPredTable$within_range))
+ 
+        Accuracy_app<- abc$Freq[abc$Var1=="Yes"]/(sum(abc$Freq))*100
+ 
+ paste("Percentage of predicted range that capture actual waste volume",Accuracy_app,"%")
+ 
+ write.csv(finalPredTable,"finalPredTableTool.csv")
+ 
+ 
+ pR2_no_roof = 1 - glm_all$deviance / glm_all$null.deviance
+ pR2_roof = 1 - glm_roof2$deviance / glm_roof2$null.deviance
+
+```
+## Getting outputs for the paper
+```{r}
+summaryAllData1<-data.frame(unclass(summary(data_all)))
+
+write.csv(summaryAllData1,"summaryAllData1.csv")
+
+#library("psych")
+summaryAllData2<-as.data.frame(describe(data_all))
+write.csv(summaryAllData2,"summaryAllData2.csv")
+
+summary(data_all)
+
+before<- read.csv("data_final.csv")
+
+highWasteVolume <- subset(before, volume>10, select = job:roof_area)
+summary(highWasteVolume)
+
+summary(modAIC_All)
+
+modAIC_All2 <- glm(volume ~ working_days + floor_area +bathrooms + corners + stories + dataSet, data = dataForModAll, family = Gamma(link = "log"))
+summary(modAIC_All2)
+
+summary(modRoofAIC2)
+
+eig.val_roof
+
+lrtest(modRoofAIC1,modRoofAIC2)
+
+
+summary(glm_all)
+lrtest(modRoofAIC2,glm_roof3)
+
+
+```
