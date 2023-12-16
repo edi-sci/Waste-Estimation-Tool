@@ -323,7 +323,7 @@ shinyServer(function(input, output) {
   saveData <- function(data) {
     # Connect to the database
     db <- mongo(collection = "inputtable", db = "waste_responsesdb",
-                url = "mongodb+srv://wasteapp:shiny1234@wmifcluster.hjl7evs.mongodb.net/test?retryWrites=true&w=majority")
+                url = "xxxx")
     
     # Insert the data into the mongo collection as a data.frame, file
     data <- as.data.frame(data)
